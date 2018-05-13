@@ -1,10 +1,30 @@
 package mapreduce
 
+import (
+	"os"
+	"encoding/json"
+	"sort"
+)
+
+type StringSlice []string
+
+func (slice StringSlice) Len() int {
+	return len(slice)
+}
+
+func (slice StringSlice) Less(i, j int) bool {
+	return slice[i] < slice[j]
+}
+
+func (slice StringSlice) Swap(i, j int) {
+	slice[i], slice[j] = slice[j], slice[i]
+}
+
 func doReduce(
 	jobName string, // the name of the whole MapReduce job
 	reduceTask int, // which reduce task this is
 	outFile string, // write the output here
-	nMap int, // the number of map tasks that were run ("M" in the paper)
+	nMap int,       // the number of map tasks that were run ("M" in the paper)
 	reduceF func(key string, values []string) string,
 ) {
 	//
@@ -44,4 +64,42 @@ func doReduce(
 	//
 	// Your code here (Part I).
 	//
+
+	keyValuesMap := make(map[string][]string)
+	keys := make([]string, 0)
+	for m := 0; m < nMap; m++ {
+		reduceFileName := reduceName(jobName, m, reduceTask)
+		file, err := os.Open(reduceFileName)
+		if err != nil {
+			panic(err)
+		}
+
+		dec := json.NewDecoder(file)
+		for {
+			var kv KeyValue
+			if err := dec.Decode(&kv); err != nil {
+				break
+			}
+			if _, ok := keyValuesMap[kv.Key]; !ok {
+				keyValuesMap[kv.Key] = make([]string, 0)
+				keys = append(keys, kv.Key)
+			}
+			keyValuesMap[kv.Key] = append(keyValuesMap[kv.Key], kv.Value)
+		}
+
+		file.Close()
+	}
+
+	sort.Sort(StringSlice(keys))
+
+	reduceFile, err := os.OpenFile(outFile, os.O_CREATE|os.O_WRONLY, 0755)
+	defer reduceFile.Close()
+	if err != nil {
+		panic(err)
+	}
+	enc := json.NewEncoder(reduceFile)
+
+	for _, key := range keys {
+		enc.Encode(KeyValue{key, reduceF(key, keyValuesMap[key])})
+	}
 }
