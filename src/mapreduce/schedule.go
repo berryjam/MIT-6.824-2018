@@ -35,7 +35,37 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	//
 	var wg sync.WaitGroup
 	existWorkerChan := make(chan string)
-	var taskChan = make(chan DoTaskArgs, ntasks)
+	var failedTaskChan = make(chan interface{}, ntasks)
+	go func() {
+		for {
+			failedTask := <-failedTaskChan
+			select {
+			case newWorkerAdd := <-registerChan:
+				go func(srv string, rpcname string,
+					args interface{}) {
+					succ := call(srv, rpcname, args, nil)
+					if succ {
+						wg.Done()
+					} else { // failed
+						failedTaskChan <- args
+					}
+					existWorkerChan <- newWorkerAdd
+				}(newWorkerAdd, "Worker.DoTask", failedTask)
+			case existWorkerAdd := <-existWorkerChan:
+				go func(srv string, rpcname string,
+					args interface{}) {
+					succ := call(srv, rpcname, args, nil)
+					if succ {
+						wg.Done()
+					} else { // failed
+						failedTaskChan <- args
+					}
+					existWorkerChan <- existWorkerAdd
+				}(existWorkerAdd, "Worker.DoTask", failedTask)
+			}
+		}
+	}()
+
 	var file string
 	for i := 0; i < ntasks; i++ {
 		wg.Add(1)
@@ -49,31 +79,29 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 			TaskNumber:    i,
 			NumOtherPhase: n_other,
 		}
-		taskChan <- args
 		select {
 		case newWorkerAdd := <-registerChan:
 			go func(srv string, rpcname string,
-				ch chan DoTaskArgs) {
-				task := <-taskChan
+				args interface{}) {
 				succ := call(srv, rpcname, args, nil)
 				if succ {
 					wg.Done()
-				} else {
-
+				} else { // failed
+					failedTaskChan <- args
 				}
 				existWorkerChan <- newWorkerAdd
-			}(newWorkerAdd, "Worker.DoTask", taskChan)
+			}(newWorkerAdd, "Worker.DoTask", args)
 		case existWorkerAdd := <-existWorkerChan:
 			go func(srv string, rpcname string,
-				ch chan DoTaskArgs) {
+				args interface{}) {
 				succ := call(srv, rpcname, args, nil)
 				if succ {
 					wg.Done()
-				} else {
-
+				} else { // failed
+					failedTaskChan <- args
 				}
 				existWorkerChan <- existWorkerAdd
-			}(existWorkerAdd, "Worker.DoTask", taskChan)
+			}(existWorkerAdd, "Worker.DoTask", args)
 		}
 	}
 
