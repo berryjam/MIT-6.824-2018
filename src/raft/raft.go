@@ -138,10 +138,10 @@ func (rf *Raft) readPersist(data []byte) {
 //
 type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
-	term int
+	term         int
 	candidatedId int
 	lastLogIndex int
-	lastLogTerm int
+	lastLogTerm  int
 }
 
 //
@@ -150,7 +150,7 @@ type RequestVoteArgs struct {
 //
 type RequestVoteReply struct {
 	// Your data here (2A).
-	term int
+	term        int
 	voteGranted bool
 }
 
@@ -159,7 +159,19 @@ type RequestVoteReply struct {
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
-	
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if args.term < rf.currentTerm {
+		reply.term = rf.currentTerm
+		reply.voteGranted = false
+	} else {
+		candidateAsLeastUpdate := false
+		//if args.lastLogTerm >= rf TODO
+
+		if (rf.votedFor == -1 || rf.votedFor == args.candidatedId) && candidateAsLeastUpdate {
+
+		}
+	}
 }
 
 //
