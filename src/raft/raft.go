@@ -36,6 +36,10 @@ type LogEntry struct {
 	term int
 }
 
+type AppendEntries struct [
+		
+}
+
 //
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
