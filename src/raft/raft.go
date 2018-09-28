@@ -31,6 +31,11 @@ const (
 	Leader
 )
 
+type LogEntry struct {
+	data interface{}
+	term int
+}
+
 //
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
@@ -64,7 +69,7 @@ type Raft struct {
 	// Persistent state on all servers:
 	currentTerm int
 	votedFor    int
-	log         []interface{}
+	log         []LogEntry
 
 	// Volatile state on all servers:
 	commitIndex int
@@ -161,15 +166,22 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	reply.voteGranted = false
+	reply.term = rf.currentTerm
 	if args.term < rf.currentTerm {
-		reply.term = rf.currentTerm
 		reply.voteGranted = false
 	} else {
 		candidateAsLeastUpdate := false
-		//if args.lastLogTerm >= rf TODO
+		if args.lastLogTerm > rf.log[len(rf.log)-1].term {
+			candidateAsLeastUpdate = true
+		} else if args.lastLogTerm == rf.log[len(rf.log)-1].term {
+			if args.lastLogIndex >= len(rf.log) {
+				candidateAsLeastUpdate = true
+			}
+		}
 
 		if (rf.votedFor == -1 || rf.votedFor == args.candidatedId) && candidateAsLeastUpdate {
-
+			reply.voteGranted = true
 		}
 	}
 }
@@ -264,6 +276,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
-
+	rf.status = Follower
+	rf.currentTerm = 0
 	return rf
 }
