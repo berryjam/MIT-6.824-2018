@@ -18,7 +18,10 @@ package raft
 //
 
 import "sync"
-import "labrpc"
+import (
+	"labrpc"
+	"time"
+)
 
 // import "bytes"
 // import "labgob"
@@ -36,8 +39,24 @@ type LogEntry struct {
 	term int
 }
 
-type AppendEntries struct [
-		
+type AppendEntriesArgs struct {
+	Term    int
+	Entries []LogEntry
+}
+
+type AppendEntriesReply struct {
+	Term    int
+	Success bool
+}
+
+func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	// TODO
+
+}
+
+func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+	return ok
 }
 
 //
@@ -147,10 +166,10 @@ func (rf *Raft) readPersist(data []byte) {
 //
 type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
-	term         int
-	candidatedId int
-	lastLogIndex int
-	lastLogTerm  int
+	Term         int
+	CandidatedId int
+	LastLogIndex int
+	LastLogTerm  int
 }
 
 //
@@ -159,8 +178,8 @@ type RequestVoteArgs struct {
 //
 type RequestVoteReply struct {
 	// Your data here (2A).
-	term        int
-	voteGranted bool
+	Term        int
+	VoteGranted bool
 }
 
 //
@@ -170,22 +189,22 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	reply.voteGranted = false
-	reply.term = rf.currentTerm
-	if args.term < rf.currentTerm {
-		reply.voteGranted = false
+	reply.VoteGranted = false
+	reply.Term = rf.currentTerm
+	if args.Term < rf.currentTerm {
+		reply.VoteGranted = false
 	} else {
 		candidateAsLeastUpdate := false
-		if args.lastLogTerm > rf.log[len(rf.log)-1].term {
+		if args.LastLogTerm > rf.log[len(rf.log)-1].term {
 			candidateAsLeastUpdate = true
-		} else if args.lastLogTerm == rf.log[len(rf.log)-1].term {
-			if args.lastLogIndex >= len(rf.log) {
+		} else if args.LastLogTerm == rf.log[len(rf.log)-1].term {
+			if args.LastLogIndex >= len(rf.log) {
 				candidateAsLeastUpdate = true
 			}
 		}
 
-		if (rf.votedFor == -1 || rf.votedFor == args.candidatedId) && candidateAsLeastUpdate {
-			reply.voteGranted = true
+		if (rf.votedFor == -1 || rf.votedFor == args.CandidatedId) && candidateAsLeastUpdate {
+			reply.VoteGranted = true
 		}
 	}
 }
@@ -282,5 +301,25 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.readPersist(persister.ReadRaftState())
 	rf.status = Follower
 	rf.currentTerm = 0
+
+	go func() {
+		// periodically send AppendEntries
+		for {
+			rf.mu.Lock()
+			if rf.status == Leader {
+				for i := 0; i < len(peers); i++ {
+					if i != me {
+						go rf.sendAppendEntries(i, &AppendEntriesArgs{
+							Term:    rf.currentTerm,
+							Entries: []LogEntry{},
+						}, &AppendEntriesReply{})
+					}
+				}
+				time.Sleep(time.Millisecond * 500)
+			}
+			rf.mu.Unlock()
+		}
+	}()
+
 	return rf
 }
